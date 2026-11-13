@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check JS
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Syntax-check modules
+        run: |
+          for f in js/steam-audio.js demo/demo.js demo/worklet.js demo/sim-worker.js test/smoke.mjs; do
+            node --check "$f"
+          done
+          test -f demo/samples/SOURCES.txt
+          for p in patches/*.patch; do test -s "$p"; done
+          test -f flake.nix
+          test -f flake.lock
+
+  build:
+    name: Build WASM (Nix)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: DeterminateSystems/nix-installer-action@v23
+
+      # Toolchain comes from cache.nixos.org (magic-nix-cache-action is deprecated).
+
+      - name: Enter flake shell (copy locked Steam Audio source + patch)
+        run: |
+          chmod +x scripts/*.sh
+          # shellHook copies the flake.lock-pinned steam-audio input into vendor/ and
+          # applies patches/ (fails loudly on conflicts)
+          nix develop --command bash -c 'cat vendor/steam-audio/.flake-source'
+
+      - name: Cache Emscripten + Steam Audio deps
+        uses: actions/cache@v6
+        with:
+          path: |
+            .emscripten_cache
+            vendor/steam-audio/core/deps
+            vendor/steam-audio/core/deps-build
+          key: wasm-deps-${{ hashFiles('flake.lock', 'patches/**', 'scripts/build-sdk.sh', 'scripts/apply-patches.sh') }}-${{ runner.os }}
+          restore-keys: |
+            wasm-deps-${{ hashFiles('flake.lock') }}-${{ runner.os }}-
+            wasm-deps-
+
+      - name: Build SDK + Embind module
+        run: nix develop --command bash -lc './scripts/build-all.sh'
+
+      - name: Verify artifacts
+        run: |
+          set -euo pipefail
+          test -s dist/steam_audio.js
+          test -s dist/steam_audio.wasm
+          test -s vendor/steam-audio/core/bin/lib/wasm/libphonon.a
+          test -f vendor/steam-audio/core/bin/include/phonon_version.h
+          grep -q 'STEAMAUDIO_VERSION_MAJOR 4' vendor/steam-audio/core/bin/include/phonon_version.h
+          grep -q 'STEAMAUDIO_VERSION_MINOR 8' vendor/steam-audio/core/bin/include/phonon_version.h
+          grep -q 'STEAMAUDIO_VERSION_PATCH 1' vendor/steam-audio/core/bin/include/phonon_version.h
+          # Module must export an ES factory (EXPORT_ES6)
+          nix develop --command node --input-type=module -e "
+            const mod = await import('./dist/steam_audio.js');
+            const factory = mod.default ?? mod.createSteamAudioModule;
+            if (typeof factory !== 'function') {
+              throw new Error('dist/steam_audio.js did not export a factory function');
+            }
+            console.log('factory ok');
+          "
+          ls -lh dist/steam_audio.js dist/steam_audio.wasm
+
+      - name: Smoke test (scene → simulate → render → params handoff)
+        run: nix develop --command node test/smoke.mjs
+
+      - name: Upload dist/
+        uses: actions/upload-artifact@v7
+        with:
+          name: steam-audio-wasm-dist
+          path: |
+            dist/steam_audio.js
+            dist/steam_audio.wasm
+          if-no-files-found: error
+          retention-days: 14
+

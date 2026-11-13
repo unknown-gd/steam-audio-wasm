@@ -1,0 +1,62 @@
+{
+  "nodes": {
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1794042290,
+        "narHash": "sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f4a03c008967841f2a0b3cb7c436fc6fc31671f6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-cmake3": {
+      "locked": {
+        "lastModified": 1758213207,
+        "narHash": "sha256-rqoqF0LEi+6ZT59tr+hTQlxVwrzQsET01U4uUdmqRtM=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f4b140d5b253f5e2a1ff4e5506edbf8267724bde",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f4b140d5b253f5e2a1ff4e5506edbf8267724bde",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "nixpkgs-cmake3": "nixpkgs-cmake3",
+        "steam-audio": "steam-audio"
+      }
+    },
+    "steam-audio": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1770835062,
+        "narHash": "sha256-kQkZJ4XatMiRl6CfBpURsFsz9mG/RAIWaYDmZs8RpkU=",
+        "owner": "ValveSoftware",
+        "repo": "steam-audio",
+        "rev": "0da18255cca520771f363ee01f100572b39a308e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ValveSoftware",
+        "ref": "v4.8.1",
+        "repo": "steam-audio",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

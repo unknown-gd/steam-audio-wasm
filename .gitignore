@@ -1,0 +1,11 @@
+tools/emsdk-shim/
+.emscripten_cache/
+# Cloned by `nix develop` (see flake.nix shellHook)
+vendor/steam-audio/
+build/
+dist/
+node_modules/
+.direnv/
+result
+*.raw
+

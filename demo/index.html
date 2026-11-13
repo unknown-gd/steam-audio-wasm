@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Steam Audio WASM — multi-room demo</title>
+  <style>
+    :root {
+      --fg: #ebe6dc;
+      --muted: #9a9386;
+      --accent: #3d9b8f;
+      --panel: rgba(18, 20, 26, 0.82);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background: #0c0d11;
+      color: var(--fg);
+    }
+    canvas#view { display: block; width: 100%; height: 100%; }
+    #hud {
+      position: fixed;
+      inset: 0 auto auto 0;
+      margin: 1rem;
+      padding: 0.9rem 1.05rem;
+      width: min(30rem, calc(100vw - 2rem));
+      background: var(--panel);
+      border: 1px solid #2a2e38;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+    #hud h1 {
+      margin: 0 0 0.25rem;
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-weight: 500;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    #hud p { margin: 0 0 0.65rem; color: var(--muted); font-size: 0.82rem; line-height: 1.4; }
+    #status { font-size: 0.78rem; color: var(--accent); min-height: 1.1em; }
+    #stats {
+      margin-top: 0.55rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: pre-line;
+    }
+    #start {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(8, 9, 12, 0.72);
+      border: 0;
+      cursor: pointer;
+      color: var(--fg);
+      font: inherit;
+    }
+    #start span {
+      padding: 0.85rem 1.4rem;
+      background: var(--accent);
+      color: #061412;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    #start[hidden] { display: none; }
+    #crosshair {
+      position: fixed;
+      inset: 50% auto auto 50%;
+      width: 10px;
+      height: 10px;
+      margin: -5px 0 0 -5px;
+      border: 1px solid rgba(235, 230, 220, 0.85);
+      border-radius: 50%;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    }
+    #hud #stats {
+      max-height: min(50vh, 22rem);
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="crosshair" aria-hidden="true"></div>
+  <div id="hud">
+    <h1>Steam Audio rooms</h1>
+    <p>Click to look · WASD · each room is isolated (only its source) · hide behind baffles for occlusion · doors to move between rooms.</p>
+    <div id="status">Loading…</div>
+    <div id="stats"></div>
+  </div>
+  <button id="start" type="button" hidden><span>Click to enter</span></button>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./demo.js"></script>
+</body>
+</html>

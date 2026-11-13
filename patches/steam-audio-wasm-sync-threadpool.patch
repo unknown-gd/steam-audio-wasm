@@ -1,0 +1,67 @@
+diff --git a/core/src/core/thread_pool.cpp b/core/src/core/thread_pool.cpp
+--- a/core/src/core/thread_pool.cpp
++++ b/core/src/core/thread_pool.cpp
+@@ -22,6 +22,8 @@
+ // ThreadPool
+ // --------------------------------------------------------------------------------------------------------------------
+ 
++#if !defined(IPL_OS_WASM)
++
+ ThreadPool::ThreadPool(int numThreads)
+     : mThreads(numThreads)
+     , mCancel(false)
+@@ -112,4 +114,54 @@
+     }
+ }
+ 
++
++#else
++
++// Emscripten without -sUSE_PTHREADS cannot create std::thread workers.
++// Run JobGraph work synchronously on the calling thread instead.
++ThreadPool::ThreadPool(int /*numThreads*/)
++    : mThreads(0)
++    , mCancel(false)
++    , mReady(0)
++    , mCompleted(0)
++    , mJobsCompleted(0)
++    , mQuit(false)
++    , mJobGraph(nullptr)
++{
++}
++
++ThreadPool::~ThreadPool()
++{
++}
++
++void ThreadPool::process(JobGraph& jobGraph)
++{
++    mJobGraph = &jobGraph;
++    mCancel = false;
++    while (mJobGraph->processNextJob(0, mCancel))
++    {
++    }
++}
++
++void ThreadPool::process(JobGraph& jobGraph, std::function<void(float)> progressFn)
++{
++    mJobGraph = &jobGraph;
++    mCancel = false;
++    const auto total = jobGraph.getNumJobs() > 0 ? jobGraph.getNumJobs() : 1;
++    auto done = 0;
++    while (mJobGraph->processNextJob(0, mCancel))
++    {
++        ++done;
++        progressFn((done * 1.0f) / total);
++    }
++    progressFn(1.0f);
++}
++
++void ThreadPool::cancel()
++{
++    mCancel = true;
++}
++
++#endif
++
+ }
