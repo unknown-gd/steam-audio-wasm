@@ -260,6 +260,74 @@ public:
         sceneDirty_ = true;
     }
 
+    // Add a static triangle mesh. `vertices` holds xyz triples, `triangles` index triples,
+    // `materialIndices` one material per triangle and `materials` 7 floats per material
+    // (absorption low/mid/high, scattering, transmission low/mid/high), like addBox.
+    void addMesh(const float* vertices, int numVertices, const int* triangles, int numTriangles,
+                 const int* materialIndices, const float* materials, int numMaterials) {
+        ensureAlive();
+        requireSimulation("addMesh");
+        if (numVertices <= 0 || numTriangles <= 0 || numMaterials <= 0) {
+            throw std::runtime_error("addMesh: empty mesh");
+        }
+        for (int i = 0; i < numTriangles * 3; ++i) {
+            if (triangles[i] < 0 || triangles[i] >= numVertices) {
+                throw std::runtime_error("addMesh: triangle index out of range");
+            }
+        }
+        for (int i = 0; i < numTriangles; ++i) {
+            if (materialIndices[i] < 0 || materialIndices[i] >= numMaterials) {
+                throw std::runtime_error("addMesh: material index out of range");
+            }
+        }
+
+        std::vector<IPLMaterial> mats(static_cast<size_t>(numMaterials));
+        for (int m = 0; m < numMaterials; ++m) {
+            const float* q = materials + m * 7;
+            mats[m].absorption[0] = q[0];
+            mats[m].absorption[1] = q[1];
+            mats[m].absorption[2] = q[2];
+            mats[m].scattering = q[3];
+            mats[m].transmission[0] = q[4];
+            mats[m].transmission[1] = q[5];
+            mats[m].transmission[2] = q[6];
+        }
+
+        // IPLVector3 / IPLTriangle are plain float[3] / int[3] structs.
+        static_assert(sizeof(IPLVector3) == 3 * sizeof(float), "IPLVector3 layout");
+        static_assert(sizeof(IPLTriangle) == 3 * sizeof(int), "IPLTriangle layout");
+
+        IPLStaticMeshSettings meshSettings{};
+        meshSettings.numVertices = numVertices;
+        meshSettings.numTriangles = numTriangles;
+        meshSettings.numMaterials = numMaterials;
+        meshSettings.vertices = const_cast<IPLVector3*>(reinterpret_cast<const IPLVector3*>(vertices));
+        meshSettings.triangles = const_cast<IPLTriangle*>(reinterpret_cast<const IPLTriangle*>(triangles));
+        meshSettings.materialIndices = const_cast<IPLint32*>(materialIndices);
+        meshSettings.materials = mats.data();
+
+        IPLStaticMesh mesh = nullptr;
+        check(iplStaticMeshCreate(scene_, &meshSettings, &mesh), "iplStaticMeshCreate");
+        iplStaticMeshAdd(mesh, scene_);
+        meshes_.push_back(mesh);
+        sceneDirty_ = true;
+    }
+
+#ifndef STEAMAUDIO_CAPI
+    // Embind form: Float32Array vertices, Int32Array triangles / materialIndices, Float32Array materials.
+    void addMeshArrays(val vertices, val triangles, val materialIndices, val materials) {
+        const std::vector<float> v = convertJSArrayToNumberVector<float>(vertices);
+        const std::vector<int> t = convertJSArrayToNumberVector<int>(triangles);
+        const std::vector<int> mi = convertJSArrayToNumberVector<int>(materialIndices);
+        const std::vector<float> m = convertJSArrayToNumberVector<float>(materials);
+        if (v.size() % 3 || t.size() % 3 || m.size() % 7 || mi.size() != t.size() / 3) {
+            throw std::runtime_error("addMesh: array sizes do not match");
+        }
+        addMesh(v.data(), static_cast<int>(v.size() / 3), t.data(), static_cast<int>(t.size() / 3),
+                mi.data(), m.data(), static_cast<int>(m.size() / 7));
+    }
+#endif
+
     void commitScene() {
         ensureAlive();
         if (scene_ && sceneDirty_) {
@@ -830,6 +898,7 @@ EMSCRIPTEN_BINDINGS(steam_audio) {
         .function("getTuning", &SteamAudioWorld::getTuning)
         .function("setTuning", &SteamAudioWorld::setTuning)
         .function("addBox", &SteamAudioWorld::addBox)
+        .function("addMesh", &SteamAudioWorld::addMeshArrays)
         .function("commitScene", &SteamAudioWorld::commitScene)
         .function("addSource", &SteamAudioWorld::addSource)
         .function("setListener", &SteamAudioWorld::setListener)

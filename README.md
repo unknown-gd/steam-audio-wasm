@@ -65,6 +65,7 @@ Exports (`w` is the pointer returned by `sa_create`; `0` = ok):
 | `sa_create(sampleRate, frameSize, maxSources, enableSimulation, enableReflections)` → `w` | create a world (`nullptr` on failure with exceptions enabled) |
 | `sa_free(w)` | destroy it |
 | `sa_add_box(w, minX, minY, minZ, maxX, maxY, maxZ, absL, absM, absH, scatter, txL, txM, txH, inward)` | add a box (material: absorption ×3, scattering, transmission ×3) |
+| `sa_add_mesh(w, vertices, numVertices, triangles, numTriangles, materialIndices, materials, numMaterials)` | add a triangle mesh: `float` xyz triples, `int` index triples, one `int` material per triangle, 7 `float`s per material (pointers into wasm memory, copied) |
 | `sa_commit_scene(w)` | commit added geometry |
 | `sa_add_source(w, x, y, z)` → id | add a source |
 | `sa_set_listener(w, x, y, z, aheadX, aheadY, aheadZ, upX, upY, upZ)` | listener pose |
@@ -121,6 +122,8 @@ Coordinates: **+x right, +y up, −z forward** (Steam Audio / OpenGL-style).
 | `reverbTimeFloor` | 0 | lower bound on RT60 (s) |
 | `reverbDecorrelationMs` | 8 | right-ear delay of the (mono) parametric reverb; 0 = mono |
 | `directSmoothing`, `occlusionSmoothing`, `reverbSmoothing` | 0.05, 0.12, 0.08 | one-pole time constants (s), frame-size independent |
+
+**Meshes**: `world.addMesh(vertices, triangles, materialIndices, materials)` adds a static triangle mesh (`Float32Array` xyz, `Int32Array` index triples, `Int32Array` material per triangle, `Float32Array` with 7 values per material in the `SteamAudioMaterials` layout), e.g. level geometry.
 
 **Other methods**: `setSourcePosition`, `setSourceActive(id, bool)` (inactive sources skip ray tracing), `resetSource(id)` (clear tails/smoothing before un-muting), `getOcclusion`, `destroy()` (idempotent).
 

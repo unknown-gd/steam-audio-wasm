@@ -62,6 +62,18 @@ EMSCRIPTEN_KEEPALIVE int sa_add_box(SteamAudioWorld* world,
     })
 }
 
+// vertices: numVertices xyz float triples, triangles: numTriangles int index triples,
+// materialIndices: one int per triangle, materials: numMaterials × 7 floats
+// (absorption low/mid/high, scattering, transmission low/mid/high). Copied, may be freed after.
+EMSCRIPTEN_KEEPALIVE int sa_add_mesh(SteamAudioWorld* world, const float* vertices, int numVertices,
+                                     const int* triangles, int numTriangles, const int* materialIndices,
+                                     const float* materials, int numMaterials) {
+    SA_GUARD(-1, {
+        world->addMesh(vertices, numVertices, triangles, numTriangles, materialIndices, materials, numMaterials);
+        return 0;
+    })
+}
+
 EMSCRIPTEN_KEEPALIVE int sa_commit_scene(SteamAudioWorld* world) {
     SA_GUARD(-1, {
         world->commitScene();

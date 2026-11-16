@@ -55,4 +55,30 @@ for (const v of output) {
 assert.ok(energy > 0, 'non-silent output');
 
 sa.sa_free(world);
+
+// Same scene, partition as a triangle mesh (sa_add_mesh) instead of a box
+const meshWorld = sa.sa_create(SR, FRAME, 2, 1, 0);
+assert.equal(sa.sa_add_box(meshWorld, -6, 0, -4.5, 6, 3.2, 4.5, 0.1, 0.1, 0.1, 0.05, 0.1, 0.1, 0.1, 1), 0);
+const quad = new Float32Array([0, 0, -4.5, 0, 3.2, -4.5, 0, 3.2, 4.5, 0, 0, 4.5]);
+const tris = new Int32Array([0, 1, 2, 0, 2, 3]);
+const matIdx = new Int32Array([0, 0]);
+const mats = new Float32Array([0.1, 0.1, 0.1, 0.05, 0, 0, 0]);
+const bytes = quad.byteLength + tris.byteLength + matIdx.byteLength + mats.byteLength;
+const ptr = sa.malloc(bytes);
+let off = ptr;
+for (const arr of [quad, tris, matIdx, mats]) {
+  new Uint8Array(sa.memory.buffer, off, arr.byteLength).set(new Uint8Array(arr.buffer));
+  off += arr.byteLength;
+}
+assert.equal(sa.sa_add_mesh(meshWorld, ptr, 4, ptr + quad.byteLength, 2,
+  ptr + quad.byteLength + tris.byteLength, ptr + quad.byteLength + tris.byteLength + matIdx.byteLength, 1), 0);
+sa.free(ptr);
+assert.equal(sa.sa_commit_scene(meshWorld), 0);
+const meshClear = sa.sa_add_source(meshWorld, -3, 1.4, 2);
+const meshHidden = sa.sa_add_source(meshWorld, 3, 1.4, 0);
+sa.sa_set_listener(meshWorld, -3, 1.6, -2, 0, 0, 1, 0, 1, 0);
+assert.equal(sa.sa_simulate(meshWorld, 0), 0);
+assert.ok(sa.sa_get_occlusion(meshWorld, meshClear) > 0.9, 'mesh: clear source is not occluded');
+assert.ok(sa.sa_get_occlusion(meshWorld, meshHidden) < 0.1, 'mesh: hidden source is occluded');
+sa.sa_free(meshWorld);
 console.log(`gmod smoke ok (rms ${Math.sqrt(energy / output.length).toFixed(6)})`);
