@@ -34,6 +34,7 @@
             gnumake
             gnupatch
             nodejs_22
+            wabt
           ];
 
           shellHook = ''

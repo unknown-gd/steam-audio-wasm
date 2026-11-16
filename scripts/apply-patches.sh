@@ -35,6 +35,8 @@ fi
 # Patches against the Steam Audio tree.
 apply_patch "$VENDOR" "$PATCHES/steam-audio-flatbuffers-linux-warnings.patch"
 apply_patch "$VENDOR" "$PATCHES/steam-audio-wasm-sync-threadpool.patch"
+# Inert unless built with -DIPL_SCALAR_FLOAT4 / -DSTEAMAUDIO_WASM_SCALAR=TRUE (scripts/build-gmod.sh).
+apply_patch "$VENDOR" "$PATCHES/steam-audio-wasm-scalar-float4.patch"
 
 # Patches against dependencies fetched by get_dependencies.py (only once present).
 FB_DIR="$VENDOR/core/deps/flatbuffers"

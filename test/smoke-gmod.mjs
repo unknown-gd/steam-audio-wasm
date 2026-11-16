@@ -1,0 +1,58 @@
+// Node smoke test of the GMod build (C ABI, no Emscripten glue):
+//   node test/smoke-gmod.mjs [dist/gmod/steam_audio_gmod.wasm]
+// Imports are the same stubs a host without WASI has to provide.
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const FRAME = 256;
+const SR = 48000;
+const path = process.argv[2] ?? new URL('../dist/gmod/steam_audio_gmod.wasm', import.meta.url);
+
+const imports = {
+  env: { emscripten_notify_memory_growth() {} },
+  wasi_snapshot_preview1: {
+    clock_time_get: () => 0,
+    fd_write: () => 8, // EBADF
+    fd_read: () => 8,
+    fd_close: () => 8,
+    fd_seek: () => 8,
+  },
+};
+
+const { instance } = await WebAssembly.instantiate(await readFile(path), imports);
+const sa = instance.exports;
+sa._initialize();
+
+const world = sa.sa_create(SR, FRAME, 2, 1, 1);
+assert.ok(world > 0, 'sa_create');
+assert.equal(sa.sa_frame_size(world), FRAME);
+assert.equal(sa.sa_sample_rate(world), SR);
+
+// room shell + full partition (Materials.plaster / Materials.shell-like values)
+assert.equal(sa.sa_add_box(world, -6, 0, -4.5, 6, 3.2, 4.5, 0.1, 0.1, 0.1, 0.05, 0.1, 0.1, 0.1, 1), 0);
+assert.equal(sa.sa_add_box(world, -0.1, 0, -4.5, 0.1, 3.2, 4.5, 0.1, 0.1, 0.1, 0.05, 0, 0, 0, 0), 0);
+assert.equal(sa.sa_commit_scene(world), 0);
+
+const clear = sa.sa_add_source(world, -3, 1.4, 2);
+const hidden = sa.sa_add_source(world, 3, 1.4, 0);
+assert.equal(sa.sa_num_sources(world), 2);
+assert.equal(sa.sa_set_listener(world, -3, 1.6, -2, 0, 0, 1, 0, 1, 0), 0);
+assert.equal(sa.sa_simulate(world, 1), 0);
+
+assert.ok(sa.sa_get_occlusion(world, clear) > 0.9, 'clear source is not occluded');
+assert.ok(sa.sa_get_occlusion(world, hidden) < 0.1, 'hidden source is occluded');
+
+const input = new Float32Array(sa.memory.buffer, sa.sa_input(world), FRAME);
+for (let i = 0; i < FRAME; i++) input[i] = Math.sin(i / 5);
+assert.equal(sa.sa_process(world, clear), 0);
+
+const output = new Float32Array(sa.memory.buffer, sa.sa_output(world), 2 * FRAME);
+let energy = 0;
+for (const v of output) {
+  assert.ok(Number.isFinite(v), 'finite output');
+  energy += v * v;
+}
+assert.ok(energy > 0, 'non-silent output');
+
+sa.sa_free(world);
+console.log(`gmod smoke ok (rms ${Math.sqrt(energy / output.length).toFixed(6)})`);

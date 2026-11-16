@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -27,7 +28,7 @@ jobs:
 
       - name: Syntax-check modules
         run: |
-          for f in js/steam-audio.js demo/demo.js demo/worklet.js demo/sim-worker.js test/smoke.mjs; do
+          for f in js/steam-audio.js demo/demo.js demo/worklet.js demo/sim-worker.js test/smoke.mjs test/smoke-gmod.mjs; do
             node --check "$f"
           done
           test -f demo/samples/SOURCES.txt
@@ -60,7 +61,7 @@ jobs:
             .emscripten_cache
             vendor/steam-audio/core/deps
             vendor/steam-audio/core/deps-build
-          key: wasm-deps-${{ hashFiles('flake.lock', 'patches/**', 'scripts/build-sdk.sh', 'scripts/apply-patches.sh') }}-${{ runner.os }}
+          key: wasm-deps-${{ hashFiles('flake.lock', 'patches/**', 'scripts/build-sdk.sh', 'scripts/build-gmod.sh', 'scripts/apply-patches.sh') }}-${{ runner.os }}
           restore-keys: |
             wasm-deps-${{ hashFiles('flake.lock') }}-${{ runner.os }}-
             wasm-deps-
@@ -101,4 +102,51 @@ jobs:
             dist/steam_audio.wasm
           if-no-files-found: error
           retention-days: 14
+
+      # Garry's Mod (Chromium 86): C ABI, no SIMD / Wasm exceptions / reference types.
+      - name: Build GMod module
+        run: nix develop --command bash -lc './scripts/build-gmod.sh'
+
+      - name: Smoke test GMod module
+        run: nix develop --command node test/smoke-gmod.mjs
+
+      - name: Upload dist/gmod/
+        uses: actions/upload-artifact@v7
+        with:
+          name: steam-audio-wasm-gmod
+          path: dist/gmod/steam_audio_gmod.wasm
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          tar -czf release/steam-audio-wasm-${GITHUB_REF_NAME}.tar.gz -C artifacts/steam-audio-wasm-dist .
+          tar -czf release/steam-audio-wasm-gmod-${GITHUB_REF_NAME}.tar.gz -C artifacts/steam-audio-wasm-gmod .
+          cp artifacts/steam-audio-wasm-gmod/steam_audio_gmod.wasm release/
+          (cd release && sha256sum * > SHA256SUMS)
+          ls -lh release
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "steam-audio-wasm-*: Embind ES module (dist/). steam-audio-wasm-gmod-* / steam_audio_gmod.wasm: Garry's Mod build (Chromium 86, plain C ABI, see README)."
 

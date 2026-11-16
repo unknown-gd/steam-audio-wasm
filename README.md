@@ -39,12 +39,54 @@ Artifacts:
 
 Both are built with native Wasm exceptions (`-fwasm-exceptions`, override with `EXCEPTION_FLAGS=…`; both builds must match). Upstream builds wasm without exception support, which turns every internal Steam Audio error into an `abort()`; with it, errors come back as `IPLerror` codes and reach JS as normal `Error`s with a message.
 
+## Garry's Mod build
+
+`./scripts/build-gmod.sh` (after or instead of `build-sdk.sh`, it fetches the dependency sources itself) produces `dist/gmod/steam_audio_gmod.wasm`. `node test/smoke-gmod.mjs` tests it. Releases ship it as a separate artifact (`steam_audio_gmod.wasm` / `steam-audio-wasm-gmod-<tag>.tar.gz`).
+
+Garry's Mod runs WebAssembly in its embedded **Chromium 86**, which has no SIMD128 (Chrome 91), no native Wasm exceptions (Chrome 95) and no reference types (Chrome 96). The GMod build therefore:
+
+- compiles everything for the MVP feature set + sign-ext, non-trapping float-to-int, bulk memory and mutable globals (`-mcpu=mvp …`, `-sMIN_CHROME_VERSION=86`), and checks the result for SIMD instructions / exception tags (wabt);
+- uses a scalar `float4` instead of NEON → SIMD128 (`patches/steam-audio-wasm-scalar-float4.patch`, inert for the regular build) and rebuilds pffft (`PFFFT_SIMD_DISABLE`), zlib and mysofa without `-msimd128`;
+- has **no C++ exception support**: an internal Steam Audio error (bad source id, `maxSources` exceeded, …) traps the module (`RuntimeError: unreachable`) instead of returning an error;
+- exposes a plain C ABI (`bindings/steam_audio_capi.cpp`) instead of Embind, as a standalone module: no Emscripten JS glue needed. Call `_initialize()` once after instantiation.
+
+Imports (all can be stubs):
+
+| Import | Stub |
+|---|---|
+| `env.emscripten_notify_memory_growth` | `() => {}` |
+| `wasi_snapshot_preview1.clock_time_get` | `() => 0` |
+| `wasi_snapshot_preview1.fd_write` / `fd_read` / `fd_close` / `fd_seek` | `() => 8` (EBADF) |
+
+Exports (`w` is the pointer returned by `sa_create`; `0` = ok):
+
+| Function | Description |
+|---|---|
+| `sa_create(sampleRate, frameSize, maxSources, enableSimulation, enableReflections)` → `w` | create a world (`nullptr` on failure with exceptions enabled) |
+| `sa_free(w)` | destroy it |
+| `sa_add_box(w, minX, minY, minZ, maxX, maxY, maxZ, absL, absM, absH, scatter, txL, txM, txH, inward)` | add a box (material: absorption ×3, scattering, transmission ×3) |
+| `sa_commit_scene(w)` | commit added geometry |
+| `sa_add_source(w, x, y, z)` → id | add a source |
+| `sa_set_listener(w, x, y, z, aheadX, aheadY, aheadZ, upX, upY, upZ)` | listener pose |
+| `sa_set_source_position(w, id, x, y, z)`, `sa_set_source_active(w, id, 0/1)`, `sa_reset_source(w, id)` | source state |
+| `sa_simulate(w, runReflections)` | run direct (+ reflection) simulation |
+| `sa_get_occlusion(w, id)` → float | simulated occlusion (1 = clear) |
+| `sa_input(w)` → `float*` | `frameSize` mono input floats |
+| `sa_process(w, id)` | render the input through source `id` |
+| `sa_output(w)` → `float*` | `2 × frameSize` interleaved stereo output floats |
+| `sa_frame_size(w)`, `sa_sample_rate(w)`, `sa_num_sources(w)` | config |
+| `sa_last_error()` / `sa_last_error_length()` | last error message (only with exceptions enabled) |
+| `malloc` / `free`, `memory` | allocation and linear memory |
+
+The scalar build renders the same output as the SIMD one (smoke test rms matches), only slower.
+
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`):
 
 1. **Check JS** — `node --check` on `js/`, `demo/`, `test/`
-2. **Build WASM** — `nix develop` + `./scripts/build-all.sh`, verifies `phonon_version.h` is 4.8.1, runs `test/smoke.mjs`, uploads `dist/` as an artifact
+2. **Build WASM** — `nix develop` + `./scripts/build-all.sh`, verifies `phonon_version.h` is 4.8.1, runs `test/smoke.mjs`, uploads `dist/` as an artifact; then `./scripts/build-gmod.sh` + `test/smoke-gmod.mjs`, uploads `dist/gmod/` as a separate artifact
+3. **Release** — on `v*` tags, publishes both builds (tarballs, `steam_audio_gmod.wasm`, `SHA256SUMS`) as a GitHub release
 
 ## JavaScript API
 

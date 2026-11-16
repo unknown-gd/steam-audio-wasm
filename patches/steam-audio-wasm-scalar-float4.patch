@@ -1,0 +1,132 @@
+--- a/core/CMakeLists.txt
++++ b/core/CMakeLists.txt
+@@ -196,7 +196,9 @@
+ 
+ # WASM flags
+ if (IPL_OS_WASM)
+-    add_compile_options(-msimd128 -mfpu=neon)
++    if (NOT STEAMAUDIO_WASM_SCALAR)
++        add_compile_options(-msimd128 -mfpu=neon)
++    endif()
+     add_link_options(-sALLOW_MEMORY_GROWTH=1 -sSINGLE_FILE=1)
+ endif()
+ 
+--- a/core/src/core/neon_float4.h
++++ b/core/src/core/neon_float4.h
+@@ -16,6 +16,59 @@
+ 
+ #pragma once
+ 
++#if defined(IPL_SCALAR_FLOAT4)
++// Scalar float4 for WebAssembly MVP targets without SIMD128 (e.g. Chromium 86).
++#include <cmath>
++#include <cstring>
++#include <cstdint>
++#include "platform.h"
++namespace ipl {
++struct alignas(16) float4_t { float v[4]; };
++inline float4_t operator+(const float4_t& a, const float4_t& b) { return {{a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2], a.v[3] + b.v[3]}}; }
++inline float4_t operator-(const float4_t& a, const float4_t& b) { return {{a.v[0] - b.v[0], a.v[1] - b.v[1], a.v[2] - b.v[2], a.v[3] - b.v[3]}}; }
++inline float4_t operator*(const float4_t& a, const float4_t& b) { return {{a.v[0] * b.v[0], a.v[1] * b.v[1], a.v[2] * b.v[2], a.v[3] * b.v[3]}}; }
++inline float4_t operator-(const float4_t& a) { return {{-a.v[0], -a.v[1], -a.v[2], -a.v[3]}}; }
++namespace float4 {
++#define IPL_F4_MAP(expr) float4_t r; for (int i = 0; i < 4; ++i) { r.v[i] = (expr); } return r;
++#define IPL_F4_BITS(op) float4_t r; for (int i = 0; i < 4; ++i) { uint32_t x, y; std::memcpy(&x, &a.v[i], 4); std::memcpy(&y, &b.v[i], 4); x = op; std::memcpy(&r.v[i], &x, 4); } return r;
++#define IPL_F4_MASK(cond) float4_t r; for (int i = 0; i < 4; ++i) { uint32_t m = (cond) ? 0xffffffffu : 0u; std::memcpy(&r.v[i], &m, 4); } return r;
++    inline float4_t add(float4_t a, float4_t b) { IPL_F4_MAP(a.v[i] + b.v[i]) }
++    inline float4_t sub(float4_t a, float4_t b) { IPL_F4_MAP(a.v[i] - b.v[i]) }
++    inline float4_t mul(float4_t a, float4_t b) { IPL_F4_MAP(a.v[i] * b.v[i]) }
++    inline float4_t rcp(float4_t a) { IPL_F4_MAP(1.0f / a.v[i]) }
++    inline float4_t div(float4_t a, float4_t b) { IPL_F4_MAP(a.v[i] / b.v[i]) }
++    inline float4_t min(float4_t a, float4_t b) { IPL_F4_MAP(a.v[i] < b.v[i] ? a.v[i] : b.v[i]) }
++    inline float4_t max(float4_t a, float4_t b) { IPL_F4_MAP(a.v[i] > b.v[i] ? a.v[i] : b.v[i]) }
++    inline float4_t rsqrt(float4_t a) { IPL_F4_MAP(1.0f / std::sqrt(a.v[i])) }
++    inline float4_t sqrt(float4_t a) { IPL_F4_MAP(std::sqrt(a.v[i])) }
++    inline float4_t andbits(float4_t a, float4_t b) { IPL_F4_BITS(x & y) }
++    inline float4_t orbits(float4_t a, float4_t b) { IPL_F4_BITS(x | y) }
++    inline float4_t andnotbits(float4_t a, float4_t b) { IPL_F4_BITS(x & ~y) } // NEON vbic semantics: a & ~b
++    inline float4_t xorbits(float4_t a, float4_t b) { IPL_F4_BITS(x ^ y) }
++    inline float4_t cmpgt(float4_t a, float4_t b) { IPL_F4_MASK(a.v[i] > b.v[i]) }
++    inline float4_t cmplt(float4_t a, float4_t b) { IPL_F4_MASK(a.v[i] < b.v[i]) }
++    inline float4_t cmpge(float4_t a, float4_t b) { IPL_F4_MASK(a.v[i] >= b.v[i]) }
++    inline float4_t cmple(float4_t a, float4_t b) { IPL_F4_MASK(a.v[i] <= b.v[i]) }
++    inline float4_t cmpeq(float4_t a, float4_t b) { IPL_F4_MASK(a.v[i] == b.v[i]) }
++    inline float4_t cmpneq(float4_t a, float4_t b) { IPL_F4_MASK(a.v[i] > b.v[i] || a.v[i] < b.v[i]) }
++    inline float4_t round(float4_t a) { IPL_F4_MAP(a.v[i] + (a.v[i] < 0.0f ? -0.5f : 0.5f)) } // matches the NEON version (adds +-0.5, no truncation)
++    inline float4_t load(const float* p) { float4_t r; std::memcpy(r.v, p, 16); return r; }
++    inline float4_t loadu(const float* p) { return load(p); }
++    inline float4_t load1(const float* p) { float4_t r = {{*p, *p, *p, *p}}; return r; }
++    inline void store(float* p, float4_t x) { std::memcpy(p, x.v, 16); }
++    inline void storeu(float* p, float4_t x) { store(p, x); }
++    inline float4_t set(float w, float x, float y, float z) { float4_t r = {{w, x, y, z}}; return r; }
++    inline float4_t set1(float a) { float4_t r = {{a, a, a, a}}; return r; }
++    inline float4_t zero() { return set1(0.0f); }
++    template <int N> inline float4_t replicate(float4_t in) { return set1(in.v[N]); }
++    inline float get1(float4_t in) { return in.v[0]; }
++#undef IPL_F4_MAP
++#undef IPL_F4_BITS
++#undef IPL_F4_MASK
++}
++}
++#else
++
+ #include <arm_neon.h>
+ 
+ #include "platform.h"
+@@ -242,4 +295,5 @@
+     }
+ }
+ 
+-}
+\ No newline at end of file
++}
++#endif // IPL_SCALAR_FLOAT4
+--- a/core/src/core/pch.h
++++ b/core/src/core/pch.h
+@@ -64,7 +64,7 @@
+ #endif
+ #endif
+ 
+-#if (defined(IPL_CPU_ARMV7) || defined(IPL_CPU_ARM64))
++#if (defined(IPL_CPU_ARMV7) || defined(IPL_CPU_ARM64)) && !defined(IPL_SCALAR_FLOAT4)
+ #include <arm_neon.h>
+ #endif
+ 
+--- a/core/src/core/array_math.cpp
++++ b/core/src/core/array_math.cpp
+@@ -143,7 +143,7 @@
+         }
+     }
+ 
+-#elif (defined(IPL_CPU_ARMV7) || defined(IPL_CPU_ARM64))
++#elif (defined(IPL_CPU_ARMV7) || defined(IPL_CPU_ARM64)) && !defined(IPL_SCALAR_FLOAT4)
+ 
+     // Since we're using strided loads, we actually need to access 8 elements
+     // at a time, so we need to zero out the least significant 3 bits of the
+@@ -162,6 +162,8 @@
+         vst2q_f32(&outData[i], c);
+     }
+ 
++#else
++    simdArraySizeAsReal = 0;
+ #endif
+ 
+     for (auto i = simdArraySizeAsReal / 2; i < size; ++i)
+@@ -263,7 +265,7 @@
+         }
+     }
+ 
+-#elif (defined(IPL_CPU_ARMV7) || defined(IPL_CPU_ARM64))
++#elif (defined(IPL_CPU_ARMV7) || defined(IPL_CPU_ARM64)) && !defined(IPL_SCALAR_FLOAT4)
+ 
+     simdArraySizeAsReal = arraySizeAsReal & ~7;
+ 
+@@ -279,6 +281,8 @@
+         vst2q_f32(&outData[i], c);
+     }
+ 
++#else
++    simdArraySizeAsReal = 0;
+ #endif
+ 
+     for (auto i = simdArraySizeAsReal / 2; i < size; ++i)

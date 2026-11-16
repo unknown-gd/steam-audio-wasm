@@ -6,8 +6,13 @@
 //   * simulation disabled: effects only. Parameters come from another instance via
 //     exportParams() → importParams(). This lets the expensive ray tracing run on a Worker
 //     while the AudioWorklet thread only renders.
+//
+// Built with -DSTEAMAUDIO_CAPI (see steam_audio_capi.cpp) the Embind layer is left out, so the
+// class can back a plain C ABI for hosts without the Emscripten JS glue.
+#ifndef STEAMAUDIO_CAPI
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -19,7 +24,9 @@
 
 #include <phonon.h>
 
+#ifndef STEAMAUDIO_CAPI
 using namespace emscripten;
+#endif
 
 namespace {
 
@@ -411,6 +418,19 @@ public:
         return sourceAt(id).params.occlusion;
     }
 
+    // Mono input frame (frameSize floats) and interleaved stereo output (2 * frameSize floats)
+    // as raw wasm memory pointers.
+    float* inputData() {
+        ensureAlive();
+        return monoIn_.data[0];
+    }
+
+    const float* outputData() {
+        ensureAlive();
+        return interleaved_.data();
+    }
+
+#ifndef STEAMAUDIO_CAPI
     // Packed snapshot of listener + per-source parameters (see kParamHeader / kParamStride).
     // The returned view aliases wasm memory: copy it (e.g. .slice()) before the next call.
     val exportParams() {
@@ -490,6 +510,7 @@ public:
         if (channel < 0 || channel > 1) throw std::runtime_error("channel must be 0 or 1");
         return val(typed_memory_view(static_cast<size_t>(config_.frameSize), mixStereo_.data[channel]));
     }
+#endif
 
     // Render the frame in inputView() for one source → outputView() / outputChannelView().
     void process(int id) {
@@ -758,6 +779,7 @@ private:
     std::vector<SourceState> sources_;  // deque-like growth is fine: SourceState holds only handles
 };
 
+#ifndef STEAMAUDIO_CAPI
 EMSCRIPTEN_BINDINGS(steam_audio) {
     constant("PARAM_HEADER", kParamHeader);
     constant("PARAM_STRIDE", kParamStride);
@@ -826,3 +848,4 @@ EMSCRIPTEN_BINDINGS(steam_audio) {
         .function("destroy", &SteamAudioWorld::destroy)
         .function("isDestroyed", &SteamAudioWorld::isDestroyed);
 }
+#endif
