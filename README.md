@@ -76,6 +76,7 @@ Exports (`w` is the pointer returned by `sa_create`; `0` = ok):
 | `sa_process(w, id)` | render the input through source `id` |
 | `sa_output(w)` → `float*` | `2 × frameSize` interleaved stereo output floats |
 | `sa_frame_size(w)`, `sa_sample_rate(w)`, `sa_num_sources(w)` | config |
+| `sa_tuning_size()` → n, `sa_get_tuning(w, float*)`, `sa_set_tuning(w, const float*, count)` | tuning as a flat float array (booleans 0 / 1) in `Tuning` field order, see `steam_audio_capi.cpp`; `sa_set_tuning` accepts a prefix |
 | `sa_last_error()` / `sa_last_error_length()` | last error message (only with exceptions enabled) |
 | `malloc` / `free`, `memory` | allocation and linear memory |
 
@@ -122,6 +123,11 @@ Coordinates: **+x right, +y up, −z forward** (Steam Audio / OpenGL-style).
 | `reverbTimeFloor` | 0 | lower bound on RT60 (s) |
 | `reverbDecorrelationMs` | 8 | right-ear delay of the (mono) parametric reverb; 0 = mono |
 | `directSmoothing`, `occlusionSmoothing`, `reverbSmoothing` | 0.05, 0.12, 0.08 | one-pole time constants (s), frame-size independent |
+| `reflectionsFollowOcclusion`, `reflectionsOcclusionFloor` | false, 0 | scale wet input like the direct path: occlusion + (1 − occlusion) × transmission (no reverb from a fully walled-off source) |
+| `reverbTimeMax` | 0 | upper bound on RT60 (s), 0 = none |
+| `normalizeDistance` | false | `minDistance` becomes a reference distance: gain = min(1, minDistance / d). Steam Audio's own model is 1 / max(d, minDistance), which also scales the level down for minDistance > 1 m |
+
+Parametric reverb only carries reverb *times*; its level is the wet input. By default that is the unattenuated source, so distant or occluded sources keep a full-level tail — enable `reflectionsFollowDistance` + `reflectionsFollowOcclusion` for game-like levels.
 
 **Meshes**: `world.addMesh(vertices, triangles, materialIndices, materials)` adds a static triangle mesh (`Float32Array` xyz, `Int32Array` index triples, `Int32Array` material per triangle, `Float32Array` with 7 values per material in the `SteamAudioMaterials` layout), e.g. level geometry.
 

@@ -128,6 +128,12 @@ struct Tuning {
     float directSmoothing = 0.05f;
     float occlusionSmoothing = 0.12f;
     float reverbSmoothing = 0.08f;
+    // Reflections, cont.
+    bool reflectionsFollowOcclusion = false;  // scale wet input like the direct path: occlusion + (1 - occlusion) * transmission
+    float reflectionsOcclusionFloor = 0.0f;   // floor for the above
+    float reverbTimeMax = 0.0f;               // upper bound on RT60 per band (s), 0 = none
+    // Distance, cont.
+    bool normalizeDistance = false;  // gain = min(1, minDistance / d): full level up to minDistance (Steam Audio: 1 / max(d, minDistance))
 };
 
 namespace {
@@ -470,6 +476,9 @@ public:
             IPLSimulationOutputs outputs{};
             iplSourceGetOutputs(src.handle, simFlags(), &outputs);
             src.params.distanceAttenuation = outputs.direct.distanceAttenuation;
+            if (tuning_.normalizeDistance) {
+                src.params.distanceAttenuation = std::min(1.0f, src.params.distanceAttenuation * tuning_.minDistance);
+            }
             src.params.occlusion = outputs.direct.occlusion;
             for (int i = 0; i < 3; ++i) {
                 src.params.air[i] = outputs.direct.airAbsorption[i];
@@ -638,6 +647,10 @@ public:
             if (tuning_.reflectionsFollowDistance) {
                 wetIn *= std::max(sp.distanceAttenuation, tuning_.reflectionsDistanceFloor);
             }
+            if (tuning_.reflectionsFollowOcclusion) {
+                const float through = sp.occlusion + (1.0f - sp.occlusion) * sp.transmission[1];
+                wetIn *= std::max(through, tuning_.reflectionsOcclusionFloor);
+            }
             const float wetOut = 1.0f + (1.0f - sp.occlusion) * tuning_.occludedWetBoost;
             const float* in = monoIn_.data[0];
             float* rin = reflectIn_.data[0];
@@ -649,6 +662,9 @@ public:
             reflectParams.irSize = irSize();
             for (int i = 0; i < 3; ++i) {
                 reflectParams.reverbTimes[i] = std::max(sp.reverbTimes[i], tuning_.reverbTimeFloor);
+                if (tuning_.reverbTimeMax > 0.0f) {
+                    reflectParams.reverbTimes[i] = std::min(reflectParams.reverbTimes[i], tuning_.reverbTimeMax);
+                }
                 reflectParams.eq[i] = 1.0f;  // only used by hybrid
             }
             iplReflectionEffectApply(src.reflection, &reflectParams, &reflectIn_, &reflectOut_, nullptr);
@@ -882,7 +898,11 @@ EMSCRIPTEN_BINDINGS(steam_audio) {
         .field("reverbDecorrelationMs", &Tuning::reverbDecorrelationMs)
         .field("directSmoothing", &Tuning::directSmoothing)
         .field("occlusionSmoothing", &Tuning::occlusionSmoothing)
-        .field("reverbSmoothing", &Tuning::reverbSmoothing);
+        .field("reverbSmoothing", &Tuning::reverbSmoothing)
+        .field("reflectionsFollowOcclusion", &Tuning::reflectionsFollowOcclusion)
+        .field("reflectionsOcclusionFloor", &Tuning::reflectionsOcclusionFloor)
+        .field("reverbTimeMax", &Tuning::reverbTimeMax)
+        .field("normalizeDistance", &Tuning::normalizeDistance);
 
     function("defaultWorldConfig", +[]() { return WorldConfig{}; });
     function("defaultTuning", +[]() { return Tuning{}; });

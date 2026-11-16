@@ -141,6 +141,53 @@ EMSCRIPTEN_KEEPALIVE float* sa_input(SteamAudioWorld* world) { return world->inp
 // 2 * frameSize interleaved stereo floats of the last sa_process().
 EMSCRIPTEN_KEEPALIVE const float* sa_output(SteamAudioWorld* world) { return world->outputData(); }
 
+// Tuning as a flat float array (booleans are 0 / 1), in this order:
+//   0 minDistance, 1 occlusionRadius, 2 distanceFloor, 3 airFloorLow, 4 airFloorMid, 5 airFloorHigh,
+//   6 transmissionFloor, 7 freqIndependentTransmission, 8 reflectionsGain, 9 reflectionsFollowDistance,
+//   10 reflectionsDistanceFloor, 11 occludedWetBoost, 12 reverbTimeFloor, 13 reverbDecorrelationMs,
+//   14 directSmoothing, 15 occlusionSmoothing, 16 reverbSmoothing, 17 reflectionsFollowOcclusion,
+//   18 reflectionsOcclusionFloor, 19 reverbTimeMax, 20 normalizeDistance
+#define SA_TUNING_FIELDS(X)                                                                         \
+    X(minDistance) X(occlusionRadius) X(distanceFloor) X(airFloorLow) X(airFloorMid) X(airFloorHigh) \
+    X(transmissionFloor) X(freqIndependentTransmission) X(reflectionsGain) X(reflectionsFollowDistance) \
+    X(reflectionsDistanceFloor) X(occludedWetBoost) X(reverbTimeFloor) X(reverbDecorrelationMs)      \
+    X(directSmoothing) X(occlusionSmoothing) X(reverbSmoothing) X(reflectionsFollowOcclusion)        \
+    X(reflectionsOcclusionFloor) X(reverbTimeMax) X(normalizeDistance)
+
+// Number of tuning values.
+EMSCRIPTEN_KEEPALIVE int sa_tuning_size() {
+    int n = 0;
+#define SA_COUNT(field) ++n;
+    SA_TUNING_FIELDS(SA_COUNT)
+#undef SA_COUNT
+    return n;
+}
+
+// Writes sa_tuning_size() floats to `out`.
+EMSCRIPTEN_KEEPALIVE int sa_get_tuning(SteamAudioWorld* world, float* out) {
+    const Tuning t = world->getTuning();
+    int i = 0;
+#define SA_GET(field) out[i++] = static_cast<float>(t.field);
+    SA_TUNING_FIELDS(SA_GET)
+#undef SA_GET
+    return i;
+}
+
+#define SA_SET(field) if (i < count) { t.field = static_cast<decltype(t.field)>(values[i]); } ++i;
+
+// Reads `count` floats (a prefix of the order above is fine, the rest keeps its value).
+EMSCRIPTEN_KEEPALIVE int sa_set_tuning(SteamAudioWorld* world, const float* values, int count) {
+    SA_GUARD(-1, {
+        Tuning t = world->getTuning();
+        int i = 0;
+        SA_TUNING_FIELDS(SA_SET)
+        world->setTuning(t);
+        return 0;
+    })
+}
+
+#undef SA_SET
+
 EMSCRIPTEN_KEEPALIVE int sa_frame_size(SteamAudioWorld* world) { return world->frameSize(); }
 EMSCRIPTEN_KEEPALIVE int sa_sample_rate(SteamAudioWorld* world) { return world->sampleRate(); }
 EMSCRIPTEN_KEEPALIVE int sa_num_sources(SteamAudioWorld* world) { return world->numSources(); }

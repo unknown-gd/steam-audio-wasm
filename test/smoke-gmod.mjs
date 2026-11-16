@@ -53,6 +53,54 @@ for (const v of output) {
   energy += v * v;
 }
 assert.ok(energy > 0, 'non-silent output');
+const rms = Math.sqrt(energy / output.length); // views detach once memory grows
+
+// Tuning round trip (flat float array, see steam_audio_capi.cpp)
+const tuningSize = sa.sa_tuning_size();
+assert.equal(tuningSize, 21);
+const tuningPtr = sa.malloc(tuningSize * 4);
+assert.equal(sa.sa_get_tuning(world, tuningPtr), tuningSize);
+const tuning = new Float32Array(sa.memory.buffer, tuningPtr, tuningSize);
+assert.equal(tuning[8], 1); // reflectionsGain
+assert.equal(tuning[19], 0); // reverbTimeMax
+tuning[8] = 0.25;
+tuning[17] = 1; // reflectionsFollowOcclusion
+tuning[19] = 1.5;
+assert.equal(sa.sa_set_tuning(world, tuningPtr, tuningSize), 0);
+new Float32Array(sa.memory.buffer, tuningPtr, tuningSize).fill(-1);
+sa.sa_get_tuning(world, tuningPtr);
+const back = new Float32Array(sa.memory.buffer, tuningPtr, tuningSize);
+assert.deepEqual([back[8], back[17], back[19]], [0.25, 1, 1.5]);
+assert.equal(sa.sa_process(world, hidden), 0); // occluded source renders with the new tuning
+sa.free(tuningPtr);
+
+// normalizeDistance: minDistance becomes a reference distance (full level inside it)
+const distWorld = sa.sa_create(SR, FRAME, 1, 1, 0);
+const far = sa.sa_add_source(distWorld, 0, 1.6, -4); // 4 m in front
+sa.sa_set_listener(distWorld, 0, 1.6, 0, 0, 0, -1, 0, 1, 0);
+const level = (normalize, minDistance) => {
+  const p = sa.malloc(sa.sa_tuning_size() * 4);
+  sa.sa_get_tuning(distWorld, p);
+  const t = new Float32Array(sa.memory.buffer, p, sa.sa_tuning_size());
+  t[0] = minDistance; t[14] = 0; t[15] = 0; t[20] = normalize; // no smoothing
+  sa.sa_set_tuning(distWorld, p, t.length);
+  sa.free(p);
+  sa.sa_simulate(distWorld, 0);
+  sa.sa_reset_source(distWorld, far);
+  let e = 0;
+  for (let k = 0; k < 4; k++) {
+    const inp = new Float32Array(sa.memory.buffer, sa.sa_input(distWorld), FRAME);
+    for (let i = 0; i < FRAME; i++) inp[i] = Math.sin(i / 5);
+    sa.sa_process(distWorld, far);
+    if (k < 2) continue;
+    for (const v of new Float32Array(sa.memory.buffer, sa.sa_output(distWorld), 2 * FRAME)) e += v * v;
+  }
+  return Math.sqrt(e);
+};
+const plain = level(0, 1), normalized = level(1, 8), capped = level(0, 8);
+assert.ok(normalized > plain * 2, `normalized (min 8 m) ${normalized} louder than plain 1/4 m ${plain}`);
+assert.ok(capped < plain, `unnormalized minDistance 8 m ${capped} quieter than 1/4 m ${plain}`);
+sa.sa_free(distWorld);
 
 sa.sa_free(world);
 
@@ -81,4 +129,4 @@ assert.equal(sa.sa_simulate(meshWorld, 0), 0);
 assert.ok(sa.sa_get_occlusion(meshWorld, meshClear) > 0.9, 'mesh: clear source is not occluded');
 assert.ok(sa.sa_get_occlusion(meshWorld, meshHidden) < 0.1, 'mesh: hidden source is occluded');
 sa.sa_free(meshWorld);
-console.log(`gmod smoke ok (rms ${Math.sqrt(energy / output.length).toFixed(6)})`);
+console.log(`gmod smoke ok (rms ${rms.toFixed(6)})`);
